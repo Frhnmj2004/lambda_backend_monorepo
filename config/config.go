@@ -46,7 +46,7 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 
-	// Get port from Railway PORT or default to API_PORT
+	// Get port from Leapcell PORT or default to API_PORT
 	port := getEnv("PORT", getEnv("API_PORT", "8080"))
 
 	config := &Config{

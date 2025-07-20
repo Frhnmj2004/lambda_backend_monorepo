@@ -1,19 +1,19 @@
-# Railway Deployment Guide for Lamda Backend
+# Leapcell Deployment Guide for Lamda Backend
 
-## 🚀 Quick Deploy to Railway
+## 🚀 Quick Deploy to Leapcell
 
 ### 1. Connect Your Repository
-1. Go to [Railway Dashboard](https://railway.app/dashboard)
-2. Click "New Project" → "Deploy from GitHub repo"
+1. Go to [Leapcell Dashboard](https://leapcell.com/dashboard)
+2. Click "New Project" → "Deploy from GitHub"
 3. Select your `lamda_backend` repository
-4. Railway will automatically detect the Dockerfile and deploy
+4. Leapcell will automatically detect the Dockerfile and leapcell.json
 
 ### 2. Add PostgreSQL Database
-1. In your Railway project, click "New" → "Database" → "PostgreSQL"
-2. Railway will automatically provide `DATABASE_URL` environment variable
+1. In your Leapcell project, click "Add Service" → "PostgreSQL"
+2. Leapcell will automatically provide `DATABASE_URL` environment variable
 
 ### 3. Configure Environment Variables
-Add these environment variables in Railway dashboard:
+Add these environment variables in Leapcell dashboard:
 
 ```bash
 # NATS Configuration (You'll need to set up NATS separately)
@@ -35,7 +35,7 @@ ENVIRONMENT=production
 ```
 
 ### 4. Deploy
-Railway will automatically deploy your application. All services will run:
+Leapcell will automatically deploy your application. All services will run:
 - ✅ API Gateway (port 8080)
 - ✅ Job Dispatcher
 - ✅ Node Registry  
@@ -43,8 +43,8 @@ Railway will automatically deploy your application. All services will run:
 
 ## 🔧 NATS Setup Options
 
-### Option 1: Railway NATS (Recommended)
-1. In Railway dashboard, click "New" → "Template" → "NATS"
+### Option 1: Leapcell NATS (Recommended)
+1. In Leapcell dashboard, click "Add Service" → "NATS"
 2. Copy the NATS URL from the service
 3. Update `NATS_URL` environment variable
 
@@ -59,29 +59,33 @@ Deploy NATS separately and provide the URL
 After deployment, your node agent should connect to:
 
 ```bash
-# NATS URL (from Railway NATS service)
-NATS_URL=nats://your-railway-nats-url:4222
+# NATS URL (from Leapcell NATS service)
+NATS_URL=nats://your-leapcell-nats-url:4222
 
-# API Gateway URL (from Railway deployment)
-API_URL=https://your-railway-app-url.railway.app
+# API Gateway URL (from Leapcell deployment)
+API_URL=https://your-leapcell-app-url.leapcell.com
 ```
 
 ## 📊 Monitoring
 
 ### Health Check
-- **URL**: `https://your-app.railway.app/health`
+- **URL**: `https://your-app.leapcell.com/health`
 - **Expected Response**: `{"service":"lamda-backend","status":"healthy"}`
 
 ### Logs
-- View logs in Railway dashboard
+- View logs in Leapcell dashboard
 - All services log to `/var/log/` directory
+
+### Metrics
+- CPU and memory usage available in dashboard
+- Auto-scaling based on load
 
 ## 🔍 Troubleshooting
 
 ### Common Issues:
 
 1. **Database Connection Failed**
-   - Ensure PostgreSQL is added to Railway project
+   - Ensure PostgreSQL is added to Leapcell project
    - Check `DATABASE_URL` environment variable
 
 2. **NATS Connection Failed**
@@ -93,7 +97,7 @@ API_URL=https://your-railway-app-url.railway.app
    - Check contract addresses are correct
 
 4. **Port Issues**
-   - Railway automatically handles PORT environment variable
+   - Leapcell automatically handles port 8080
    - API Gateway runs on port 8080 by default
 
 ## 🎯 Production Checklist
@@ -105,19 +109,28 @@ API_URL=https://your-railway-app-url.railway.app
 - [ ] Node agent can connect to NATS
 - [ ] Blockchain connections working
 - [ ] Logs are being generated
+- [ ] Auto-scaling configured
 
 ## 📝 Environment Variables Reference
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string (auto-provided by Railway) |
+| `DATABASE_URL` | ✅ | PostgreSQL connection string (auto-provided by Leapcell) |
 | `NATS_URL` | ✅ | NATS server connection string |
 | `BSC_RPC_URL` | ✅ | BSC testnet RPC endpoint |
 | `OPBNB_RPC_URL` | ✅ | opBNB testnet RPC endpoint |
 | `JOB_MANAGER_CONTRACT_ADDRESS` | ✅ | JobManager contract address |
 | `NODE_REPUTATION_CONTRACT_ADDRESS` | ✅ | NodeReputation contract address |
 | `ADMIN_WALLET_PRIVATE_KEY` | ✅ | Admin wallet private key |
-| `PORT` | ❌ | Port for API Gateway (auto-provided by Railway) |
+| `API_PORT` | ❌ | Port for API Gateway (default: 8080) |
 | `ENVIRONMENT` | ❌ | Set to "production" |
 
-Your Lamda backend is now ready for Railway deployment! 🚀 
+## 🚀 Leapcell Features
+
+- **Auto-scaling**: Automatically scales based on load (1-3 instances)
+- **Health checks**: Monitors service health every 30 seconds
+- **Resource limits**: 0.5 CPU, 512Mi memory per instance
+- **Zero-downtime deployments**: Rolling updates
+- **Built-in monitoring**: CPU, memory, and network metrics
+
+Your Lamda backend is now ready for Leapcell deployment! 🚀 
