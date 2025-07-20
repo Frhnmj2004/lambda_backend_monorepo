@@ -2,13 +2,16 @@ package blockchain
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -75,6 +78,52 @@ func (e *EVMClient) GetChainID(ctx context.Context) (*big.Int, error) {
 	return e.client.ChainID(ctx)
 }
 
+// CreateTransactOpts creates transaction options for contract interactions
+func (e *EVMClient) CreateTransactOpts(ctx context.Context, privateKeyHex string) (*bind.TransactOpts, error) {
+	privateKey, err := crypto.HexToECDSA(privateKeyHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("failed to get public key")
+	}
+
+	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+	chainID, err := e.GetChainID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chain ID: %w", err)
+	}
+
+	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transactor: %w", err)
+	}
+
+	// Get the current nonce
+	nonce, err := e.GetNonce(ctx, fromAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get nonce: %w", err)
+	}
+	auth.Nonce = big.NewInt(int64(nonce))
+
+	// Get gas price
+	gasPrice, err := e.GetGasPrice(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get gas price: %w", err)
+	}
+	auth.GasPrice = gasPrice
+
+	return auth, nil
+}
+
+// WaitForTransaction waits for a transaction to be mined
+func (e *EVMClient) WaitForTransaction(ctx context.Context, tx *types.Transaction) (*types.Receipt, error) {
+	return bind.WaitMined(ctx, e.client, tx)
+}
+
 // Close closes the client connection
 func (e *EVMClient) Close() {
 	if e.client != nil {
@@ -90,18 +139,20 @@ func (e *EVMClient) IsConnected(ctx context.Context) bool {
 
 // WaitForConnection waits for the client to be connected with timeout
 func (e *EVMClient) WaitForConnection(ctx context.Context, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	// Create a new context with timeout
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for blockchain connection")
-		default:
-			if e.IsConnected(ctx) {
-				return nil
-			}
-			time.Sleep(time.Second)
-		}
+	// Try to get the latest block number as a connection test
+	_, err := e.client.BlockNumber(timeoutCtx)
+	if err != nil {
+		return fmt.Errorf("failed to connect to blockchain: %w", err)
 	}
+
+	return nil
+}
+
+// GetClient returns the underlying ethclient for contract initialization
+func (e *EVMClient) GetClient() *ethclient.Client {
+	return e.client
 }

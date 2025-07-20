@@ -5,6 +5,8 @@ import (
 	"os"
 	"strconv"
 
+	"lamda_backend/pkg/blockchain"
+
 	"github.com/joho/godotenv"
 )
 
@@ -43,10 +45,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	config := &Config{
-		DatabaseURL:                   getEnv("DATABASE_URL", "postgres://user:password@localhost:5432/lamda_db"),
+		DatabaseURL:                   getEnv("DATABASE_URL", "postgres://lamda:lamda123@localhost:5432/lamda_db"),
 		NATSURL:                       getEnv("NATS_URL", "nats://localhost:4222"),
-		BSCRPCURL:                     getEnv("BSC_RPC_URL", "https://bsc-dataseed1.binance.org/"),
-		OpBNBRPCURL:                   getEnv("OPBNB_RPC_URL", "https://opbnb-mainnet-rpc.bnbchain.org"),
+		BSCRPCURL:                     getEnv("BSC_RPC_URL", "https://data-seed-prebsc-2-s1.binance.org:8545/"),
+		OpBNBRPCURL:                   getEnv("OPBNB_RPC_URL", "https://opbnb-testnet-rpc.bnbchain.org"),
 		JobManagerContractAddress:     getEnv("JOB_MANAGER_CONTRACT_ADDRESS", ""),
 		NodeReputationContractAddress: getEnv("NODE_REPUTATION_CONTRACT_ADDRESS", ""),
 		AdminWalletPrivateKey:         getEnv("ADMIN_WALLET_PRIVATE_KEY", ""),
@@ -66,6 +68,16 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return config, nil
+}
+
+// CreateBSCClient creates a blockchain client for BSC network
+func (c *Config) CreateBSCClient() (*blockchain.EVMClient, error) {
+	return blockchain.NewEVMClient(c.BSCRPCURL)
+}
+
+// CreateOpBNBClient creates a blockchain client for opBNB network
+func (c *Config) CreateOpBNBClient() (*blockchain.EVMClient, error) {
+	return blockchain.NewEVMClient(c.OpBNBRPCURL)
 }
 
 // getEnv gets an environment variable with a fallback default value

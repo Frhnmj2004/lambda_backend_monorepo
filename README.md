@@ -1,102 +1,64 @@
 # Lamda Network Backend
 
-A comprehensive Go microservices backend for the Lamda Network, providing event-driven GPU marketplace orchestration with blockchain integration.
+A production-ready Go backend for the Lamda Network, providing blockchain event listening, job dispatching, and reputation management services with IPFS integration.
 
-## Architecture Overview
+## Architecture
 
-The Lamda Network backend is built as a set of event-driven Go microservices that orchestrate the entire GPU marketplace ecosystem:
+The backend consists of four main services:
 
-- **API Gateway**: Fiber-based HTTP API for frontend communication
-- **Node Registry**: Manages GPU provider registration and heartbeats
-- **Job Dispatcher**: Handles job creation and assignment to providers
-- **Reputation Service**: Updates on-chain reputation scores
-- **Event-Driven Communication**: All services communicate via NATS messaging
+1. **Node Registry Service** - Listens to NodeReputation contract events on opBNB and maintains provider database
+2. **Job Dispatcher Service** - Listens to JobManager contract events on BSC and dispatches jobs to providers via IPFS
+3. **Reputation Service** - Listens to JobManager events on BSC and updates reputation on opBNB
+4. **API Gateway** - Provides REST API endpoints for external integrations
 
-## System Integration
+## Prerequisites
 
-This backend serves as the central nervous system connecting:
+- Go 1.21+
+- PostgreSQL 13+
+- NATS Server
+- Access to BSC and opBNB RPC endpoints
 
-1. **Frontend (React)**: User interface for renters and providers
-2. **Blockchain Contracts**: 
-   - `JobManager.sol` (BSC): High-value job creation and payment escrow
-   - `NodeReputation.sol` (opBNB): Provider registration and reputation
-3. **Node Agents**: Go executables running on provider GPU machines
-4. **BNB Greenfield**: Decentralized data storage
+## Smart Contracts
 
-## Project Structure
+The backend integrates with two deployed smart contracts:
 
-```
-/lamda_backend
-|-- api/
-|   |-- controller/          # HTTP request handlers
-|   |-- router/             # Route definitions
-|-- cmd/
-|   |-- api_gateway/        # API Gateway service entrypoint
-|   |-- job_dispatcher/     # Job Dispatcher service entrypoint
-|   |-- node_registry/      # Node Registry service entrypoint
-|   |-- reputation_service/ # Reputation service entrypoint
-|-- config/                 # Configuration management
-|-- internal/
-|   |-- auth/              # SIWE authentication
-|   |-- job_dispatcher/    # Job dispatching business logic
-|   |-- node_registry/     # Node registry business logic
-|   |-- reputation/        # Reputation management logic
-|-- migrations/            # Database migrations
-|-- pkg/
-|   |-- blockchain/        # Ethereum client wrapper
-|   |-- database/          # Database connection wrapper
-|   |-- logger/            # Structured logging wrapper
-|   |-- nats/              # NATS messaging wrapper
-|-- go.mod                 # Go module definition
-|-- Dockerfile             # Multi-stage container build
-|-- env.example            # Environment variables template
-```
+- **JobManager.sol** (BSC Testnet): `0xd9264B533dD53198C7aE345C6aFE8EF054303b53`
+- **NodeReputation.sol** (opBNB Testnet): `0x108f2c400C9828d8044a5F6985f0C9589B90758D`
 
-## Services
+## IPFS Integration
 
-### API Gateway (`cmd/api_gateway/`)
-- **Purpose**: HTTP API for frontend communication
-- **Port**: 8080 (configurable)
-- **Endpoints**:
-  - `GET /health` - Health check
-  - `GET /api/v1/nodes` - List active GPU providers
-  - `GET /api/v1/nodes/:address` - Get specific provider
-  - `GET /api/v1/nodes/stats` - Provider statistics
-  - `GET /api/v1/jobs` - List jobs
-  - `GET /api/v1/jobs/:id` - Get specific job
-  - `GET /api/v1/jobs/renter/:address` - Jobs by renter
-  - `GET /api/v1/jobs/provider/:address` - Jobs by provider
-  - `GET /api/v1/jobs/stats` - Job statistics
+The backend now uses IPFS for file storage instead of BNB Greenfield:
 
-### Node Registry (`cmd/node_registry/`)
-- **Purpose**: Manages GPU provider registration and heartbeats
-- **Blockchain**: Listens to `NodeReputation.sol` on opBNB
-- **Events**: `NodeRegistered`, `NodeHeartbeat`
-- **NATS**: Subscribes to `nodes.query` for provider queries
-- **Database**: PostgreSQL for provider state
+- **Input Files**: Frontend uploads input files to IPFS (via Pinata or similar) and provides the CID
+- **Job Assignment**: Backend sends IPFS CIDs to node agents via NATS
+- **Output Files**: Node agents upload results to IPFS and return the output CID
+- **Storage**: All file references use IPFS Content Identifiers (CIDs)
 
-### Job Dispatcher (`cmd/job_dispatcher/`)
-- **Purpose**: Handles job creation and assignment
-- **Blockchain**: Listens to `JobManager.sol` on BSC
-- **Events**: `JobCreated`
-- **NATS**: Publishes to `jobs.dispatch.<provider_address>`
-- **Database**: PostgreSQL for job tracking
+## Quick Start
 
-### Reputation Service (`cmd/reputation_service/`)
-- **Purpose**: Updates on-chain reputation scores
-- **Blockchain**: Listens to `JobManager.sol` on BSC, calls `NodeReputation.sol` on opBNB
-- **Events**: `JobConfirmed`
-- **Function**: Calls `incrementJobs(address provider)` on-chain
-
-## Configuration
-
-Copy `env.example` to `.env` and configure the following variables:
+### 1. Clone and Setup
 
 ```bash
-# Database
-DATABASE_URL=postgres://user:password@localhost:5432/lamda_db
+git clone <repository-url>
+cd lamda_backend
+go mod download
+```
 
-# NATS
+### 2. Environment Configuration
+
+Copy the example environment file and configure it:
+
+```bash
+cp env.example .env
+```
+
+Edit `.env` with your configuration:
+
+```env
+# Database Configuration
+DATABASE_URL=postgres://username:password@localhost:5432/lamda_db
+
+# NATS Configuration
 NATS_URL=nats://localhost:4222
 
 # Blockchain RPC URLs
@@ -104,143 +66,201 @@ BSC_RPC_URL=https://bsc-dataseed1.binance.org/
 OPBNB_RPC_URL=https://opbnb-mainnet-rpc.bnbchain.org
 
 # Smart Contract Addresses
-JOB_MANAGER_CONTRACT_ADDRESS=0x...
-NODE_REPUTATION_CONTRACT_ADDRESS=0x...
+JOB_MANAGER_CONTRACT_ADDRESS=0xd9264B533dD53198C7aE345C6aFE8EF054303b53
+NODE_REPUTATION_CONTRACT_ADDRESS=0x108f2c400C9828d8044a5F6985f0C9589B90758D
 
-# Admin Wallet (for reputation updates)
-ADMIN_WALLET_PRIVATE_KEY=your_private_key_here
+# Admin Wallet Private Key (for reputation updates)
+ADMIN_WALLET_PRIVATE_KEY=your_admin_wallet_private_key_here
 
-# API Gateway
+# API Gateway Configuration
 API_PORT=8080
+
+# Environment
 ENVIRONMENT=development
 ```
 
-## Database Schema
+### 3. Database Setup
 
-### Providers Table
-```sql
-CREATE TABLE providers (
-    id SERIAL PRIMARY KEY,
-    wallet_address VARCHAR(42) NOT NULL UNIQUE,
-    gpu_model VARCHAR(100) NOT NULL,
-    vram INTEGER NOT NULL,
-    last_seen TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    is_online BOOLEAN DEFAULT true,
-    total_jobs_completed INTEGER DEFAULT 0,
-    reputation_score INTEGER DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+The backend uses GORM auto-migration, so the database schema will be automatically created when you start the services. Just create the database:
+
+```bash
+# Create database
+createdb lamda_db
 ```
 
-## NATS Messaging
+The tables will be automatically created when you run the services for the first time.
 
-### Subjects
-- `nodes.query` - Query active providers (request-reply)
-- `jobs.query` - Query jobs (request-reply)
-- `jobs.dispatch.<provider_address>` - Job assignment to specific provider
+### 4. Start Services
 
-### Message Formats
+#### Option A: Individual Services
 
-#### Job Assignment
+```bash
+# Terminal 1: Node Registry Service
+go run cmd/node_registry/main.go
+
+# Terminal 2: Job Dispatcher Service
+go run cmd/job_dispatcher/main.go
+
+# Terminal 3: Reputation Service
+go run cmd/reputation_service/main.go
+
+# Terminal 4: API Gateway
+go run cmd/api_gateway/main.go
+```
+
+#### Option B: Using Makefile
+
+```bash
+# Start all services
+make start
+
+# Start individual services
+make start-node-registry
+make start-job-dispatcher
+make start-reputation-service
+make start-api-gateway
+```
+
+## Production Deployment
+
+### Docker Deployment
+
+```bash
+# Build the Docker image
+docker build -t lamda-backend .
+
+# Run with docker-compose
+docker-compose up -d
+```
+
+### Systemd Service Files
+
+Create systemd service files for each service:
+
+```ini
+# /etc/systemd/system/lamda-node-registry.service
+[Unit]
+Description=Lamda Node Registry Service
+After=network.target
+
+[Service]
+Type=simple
+User=lamda
+WorkingDirectory=/opt/lamda-backend
+ExecStart=/opt/lamda-backend/node-registry
+Restart=always
+EnvironmentFile=/opt/lamda-backend/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## API Endpoints
+
+### Node Registry API
+
+- `GET /api/nodes` - List active nodes
+- `GET /api/nodes/{address}` - Get node details
+- `POST /api/nodes/query` - Query nodes with filters
+
+### Job Management API
+
+- `GET /api/jobs` - List jobs
+- `GET /api/jobs/{id}` - Get job details
+- `POST /api/jobs/query` - Query jobs with filters
+- `PUT /api/jobs/{id}/status` - Update job status
+
+### Reputation API
+
+- `GET /api/reputation/{address}` - Get provider reputation
+- `GET /api/reputation/{address}/jobs` - Get completed jobs count
+
+## Event Flow
+
+1. **Provider Registration**: Node agents call `registerNode()` on NodeReputation contract
+2. **Job Creation**: Frontend uploads input file to IPFS and calls `createJob()` on JobManager contract with the CID
+3. **Job Dispatch**: Backend listens to JobCreated events and dispatches jobs with IPFS CIDs to providers via NATS
+4. **Job Completion**: Providers complete jobs, upload results to IPFS, and call `confirmResult()` on JobManager
+5. **Reputation Update**: Backend listens to JobConfirmed events and calls `incrementJobs()` on NodeReputation
+
+## NATS Message Format
+
+### Job Assignment Message
+
 ```json
 {
-  "jobId": "job_123",
+  "jobId": "0x1234567890abcdef...",
   "dockerImage": "nvidia/cuda:11.8-base",
-  "greenfieldInputUrl": "https://greenfield.bnbchain.org/bucket/input",
-  "greenfieldOutputBucket": "output-bucket",
-  "greenfieldOutputName": "result.tar.gz"
+  "inputFileCID": "QmX...abc123"
 }
+```
+
+## Monitoring and Logging
+
+The backend includes comprehensive logging and monitoring:
+
+- Structured logging with service identification
+- Error tracking and reporting
+- Health check endpoints
+- Transaction monitoring
+
+## Security Considerations
+
+- Admin private key should be stored securely
+- Use environment variables for sensitive configuration
+- Implement rate limiting on API endpoints
+- Validate all input data
+- Use HTTPS in production
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Blockchain Connection Failed**
+   - Check RPC URLs are accessible
+   - Verify network connectivity
+   - Check contract addresses are correct
+
+2. **Database Connection Issues**
+   - Verify PostgreSQL is running
+   - Check database credentials
+   - Ensure migrations have been run
+
+3. **NATS Connection Issues**
+   - Verify NATS server is running
+   - Check NATS URL configuration
+   - Ensure network connectivity
+
+### Logs
+
+Check service logs for detailed error information:
+
+```bash
+# View logs for a specific service
+journalctl -u lamda-node-registry -f
 ```
 
 ## Development
 
-### Prerequisites
-- Go 1.21+
-- PostgreSQL
-- NATS Server
-- Docker (optional)
+### Running Tests
 
-### Local Development
 ```bash
-# Install dependencies
-go mod download
-
-# Run database migrations
-psql -d lamda_db -f migrations/001_create_providers_table.sql
-
-# Start NATS server
-nats-server
-
-# Run services (in separate terminals)
-go run cmd/api_gateway/main.go
-go run cmd/node_registry/main.go
-go run cmd/job_dispatcher/main.go
-go run cmd/reputation_service/main.go
-```
-
-### Testing
-```bash
-# Run all tests
 go test ./...
-
-# Run specific service tests
-go test ./internal/node_registry/...
 ```
 
-## Deployment
+### Code Generation
 
-### Docker
+Contract bindings are pre-generated. To regenerate:
+
 ```bash
-# Build image
-docker build -t lamda-backend .
+# Install abigen
+go install github.com/ethereum/go-ethereum/cmd/abigen
 
-# Run container
-docker run -p 8080:8080 --env-file .env lamda-backend
+# Generate bindings
+abigen --abi=contracts/JobManager.abi --pkg=contracts --out=pkg/contracts/jobmanager.go
+abigen --abi=contracts/NodeReputation.abi --pkg=contracts --out=pkg/contracts/nodereputation.go
 ```
-
-### Railway Deployment
-1. Connect your repository to Railway
-2. Set environment variables in Railway dashboard
-3. Deploy - Railway will automatically build and run the Dockerfile
-
-### Production Considerations
-- Use managed PostgreSQL (e.g., Railway Postgres)
-- Use managed NATS (e.g., Railway NATS)
-- Set up proper monitoring and logging
-- Configure CORS for your frontend domain
-- Use HTTPS in production
-- Secure admin wallet private key
-
-## API Documentation
-
-### Authentication
-The API uses SIWE (Sign-In With Ethereum) for wallet-based authentication.
-
-### Rate Limiting
-Consider implementing rate limiting for production use.
-
-### Error Handling
-All endpoints return consistent error responses:
-```json
-{
-  "error": "Error message",
-  "success": false
-}
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
 
 ## License
 
-This project is licensed under the MIT License.
-
-## Support
-
-For support and questions, please open an issue in the repository. 
+[License information] 

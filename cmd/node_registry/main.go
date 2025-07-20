@@ -66,7 +66,7 @@ func main() {
 	defer blockchainClient.Close()
 
 	// Wait for blockchain connection
-	if err := blockchainClient.WaitForConnection(ctx, 30); err != nil {
+	if err := blockchainClient.WaitForConnection(ctx, 30*time.Second); err != nil {
 		log.Error("Failed to wait for blockchain connection", "error", err)
 		os.Exit(1)
 	}

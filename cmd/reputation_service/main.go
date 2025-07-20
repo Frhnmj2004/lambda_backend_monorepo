@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"lamda_backend/config"
 	"lamda_backend/internal/reputation"
@@ -25,24 +26,47 @@ func main() {
 	log := logger.New("info").WithService("reputation-service")
 	log.Info("Starting Lamda Reputation Service")
 
-	// Connect to blockchain (BSC for JobManager contract)
-	blockchainClient, err := blockchain.NewEVMClient(cfg.BSCRPCURL)
+	// Create context for blockchain connection checks
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Connect to BSC blockchain
+	bscClient, err := blockchain.NewEVMClient(cfg.BSCRPCURL)
 	if err != nil {
-		log.Error("Failed to connect to blockchain", "error", err)
+		log.Error("Failed to connect to BSC blockchain", "error", err)
 		os.Exit(1)
 	}
-	defer blockchainClient.Close()
+	defer bscClient.Close()
 
-	// Wait for blockchain connection
-	ctx, cancel := context.WithTimeout(context.Background(), 30)
-	defer cancel()
-	if err := blockchainClient.WaitForConnection(ctx, 30); err != nil {
-		log.Error("Failed to wait for blockchain connection", "error", err)
+	// Wait for BSC connection
+	if err := bscClient.WaitForConnection(ctx, 30*time.Second); err != nil {
+		log.Error("Failed to wait for BSC connection", "error", err)
+		os.Exit(1)
+	}
+
+	// Connect to opBNB blockchain
+	opBNBClient, err := blockchain.NewEVMClient(cfg.OpBNBRPCURL)
+	if err != nil {
+		log.Error("Failed to connect to opBNB blockchain", "error", err)
+		os.Exit(1)
+	}
+	defer opBNBClient.Close()
+
+	// Wait for opBNB connection
+	if err := opBNBClient.WaitForConnection(ctx, 30*time.Second); err != nil {
+		log.Error("Failed to wait for opBNB connection", "error", err)
 		os.Exit(1)
 	}
 
 	// Initialize reputation service
-	reputationService := reputation.NewService(blockchainClient, log, cfg.NodeReputationContractAddress, cfg.AdminWalletPrivateKey)
+	reputationService := reputation.NewService(
+		bscClient,
+		opBNBClient,
+		log,
+		cfg.JobManagerContractAddress,
+		cfg.NodeReputationContractAddress,
+		cfg.AdminWalletPrivateKey,
+	)
 
 	// Start the service
 	if err := reputationService.Start(context.Background()); err != nil {

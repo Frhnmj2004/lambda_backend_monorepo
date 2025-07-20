@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"lamda_backend/config"
 	"lamda_backend/internal/job_dispatcher"
@@ -56,7 +57,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Connect to blockchain
+	// Connect to blockchain (BSC for JobManager contract)
 	blockchainClient, err := blockchain.NewEVMClient(cfg.BSCRPCURL)
 	if err != nil {
 		log.Error("Failed to connect to blockchain", "error", err)
@@ -65,7 +66,7 @@ func main() {
 	defer blockchainClient.Close()
 
 	// Wait for blockchain connection
-	if err := blockchainClient.WaitForConnection(ctx, 30); err != nil {
+	if err := blockchainClient.WaitForConnection(ctx, 30*time.Second); err != nil {
 		log.Error("Failed to wait for blockchain connection", "error", err)
 		os.Exit(1)
 	}

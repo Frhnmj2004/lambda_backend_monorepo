@@ -6,25 +6,21 @@ import (
 
 // JobCreatedEvent represents the JobCreated event from the JobManager contract
 type JobCreatedEvent struct {
-	JobID                  string `json:"job_id"`
-	RenterAddress          string `json:"renter_address"`
-	ProviderAddress        string `json:"provider_address"`
-	DockerImage            string `json:"docker_image"`
-	GreenfieldInputURL     string `json:"greenfield_input_url"`
-	GreenfieldOutputBucket string `json:"greenfield_output_bucket"`
-	GreenfieldOutputName   string `json:"greenfield_output_name"`
-	PaymentAmount          string `json:"payment_amount"`
-	BlockNumber            uint64 `json:"block_number"`
-	TransactionHash        string `json:"transaction_hash"`
+	JobID           string `json:"job_id"`
+	RenterAddress   string `json:"renter_address"`
+	ProviderAddress string `json:"provider_address"`
+	DockerImage     string `json:"docker_image"`
+	InputFileCID    string `json:"input_file_cid"`
+	PaymentAmount   string `json:"payment_amount"`
+	BlockNumber     uint64 `json:"block_number"`
+	TransactionHash string `json:"transaction_hash"`
 }
 
-// JobAssignment represents a job assignment sent to a provider
+// JobAssignment represents a job assignment sent to a provider via NATS
 type JobAssignment struct {
-	JobID                  string `json:"jobId"`
-	DockerImage            string `json:"dockerImage"`
-	GreenfieldInputURL     string `json:"greenfieldInputUrl"`
-	GreenfieldOutputBucket string `json:"greenfieldOutputBucket"`
-	GreenfieldOutputName   string `json:"greenfieldOutputName"`
+	JobID        string `json:"jobId"`
+	DockerImage  string `json:"dockerImage"`
+	InputFileCID string `json:"inputFileCID"`
 }
 
 // JobStatus represents the status of a job
@@ -41,21 +37,20 @@ const (
 
 // Job represents a job in the system
 type Job struct {
-	ID                     string     `json:"id"`
-	RenterAddress          string     `json:"renter_address"`
-	ProviderAddress        string     `json:"provider_address"`
-	DockerImage            string     `json:"docker_image"`
-	GreenfieldInputURL     string     `json:"greenfield_input_url"`
-	GreenfieldOutputBucket string     `json:"greenfield_output_bucket"`
-	GreenfieldOutputName   string     `json:"greenfield_output_name"`
-	PaymentAmount          string     `json:"payment_amount"`
-	Status                 JobStatus  `json:"status"`
-	CreatedAt              time.Time  `json:"created_at"`
-	UpdatedAt              time.Time  `json:"updated_at"`
-	AssignedAt             *time.Time `json:"assigned_at,omitempty"`
-	CompletedAt            *time.Time `json:"completed_at,omitempty"`
-	FailedAt               *time.Time `json:"failed_at,omitempty"`
-	ErrorMessage           string     `json:"error_message,omitempty"`
+	ID              string     `json:"id"`
+	RenterAddress   string     `json:"renter_address"`
+	ProviderAddress string     `json:"provider_address"`
+	DockerImage     string     `json:"docker_image"`
+	InputFileCID    string     `json:"input_file_cid"`
+	OutputFileCID   string     `json:"output_file_cid,omitempty"`
+	PaymentAmount   string     `json:"payment_amount"`
+	Status          JobStatus  `json:"status"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	AssignedAt      *time.Time `json:"assigned_at,omitempty"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	FailedAt        *time.Time `json:"failed_at,omitempty"`
+	ErrorMessage    string     `json:"error_message,omitempty"`
 }
 
 // JobQuery represents a query for jobs

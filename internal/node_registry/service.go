@@ -7,19 +7,23 @@ import (
 	"time"
 
 	"lamda_backend/pkg/blockchain"
+	"lamda_backend/pkg/contracts"
 	"lamda_backend/pkg/logger"
 	"lamda_backend/pkg/nats"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"gorm.io/gorm"
 )
 
 // Service handles node registry operations
 type Service struct {
-	db           *gorm.DB
-	natsClient   *nats.NATSClient
-	blockchain   *blockchain.EVMClient
-	logger       *logger.Logger
-	contractAddr string
+	db                     *gorm.DB
+	natsClient             *nats.NATSClient
+	blockchain             *blockchain.EVMClient
+	logger                 *logger.Logger
+	contractAddr           string
+	nodeReputationContract *contracts.NodeReputation
 }
 
 // NewService creates a new node registry service
@@ -36,6 +40,14 @@ func NewService(db *gorm.DB, natsClient *nats.NATSClient, blockchain *blockchain
 // Start starts the node registry service
 func (s *Service) Start(ctx context.Context) error {
 	s.logger.Info("Starting node registry service")
+
+	// Initialize the NodeReputation contract
+	contractAddress := common.HexToAddress(s.contractAddr)
+	nodeReputationContract, err := contracts.NewNodeReputation(contractAddress, s.blockchain.GetClient())
+	if err != nil {
+		return fmt.Errorf("failed to initialize NodeReputation contract: %w", err)
+	}
+	s.nodeReputationContract = nodeReputationContract
 
 	// Subscribe to NATS queries
 	if err := s.subscribeToQueries(); err != nil {
@@ -88,17 +100,26 @@ func (s *Service) handleNodeQuery(data []byte) ([]byte, error) {
 
 // listenToBlockchainEvents listens for blockchain events
 func (s *Service) listenToBlockchainEvents(ctx context.Context) {
-	s.logger.Info("Starting blockchain event listener")
+	s.logger.Info("Starting blockchain event listener (polling mode)")
 
-	// TODO: Implement actual blockchain event listening
-	// This would involve:
-	// 1. Setting up event filters for NodeRegistered and NodeHeartbeat events
-	// 2. Polling for new events
-	// 3. Processing events and updating the database
+	// Get the latest block number to start listening from
+	latestBlock, err := s.blockchain.GetLatestBlockNumber(ctx)
+	if err != nil {
+		s.logger.Error("Failed to get latest block number", "error", err)
+		return
+	}
 
-	// For now, we'll simulate the event processing
-	ticker := time.NewTicker(30 * time.Second)
+	// Start from the latest block
+	fromBlock := uint64(latestBlock)
+	s.logger.Info("Starting event listener from block", "block", fromBlock)
+
+	// Poll for events every 10 seconds
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
+
+	// Also poll for offline providers every 5 minutes
+	offlineTicker := time.NewTicker(5 * time.Minute)
+	defer offlineTicker.Stop()
 
 	for {
 		select {
@@ -106,10 +127,107 @@ func (s *Service) listenToBlockchainEvents(ctx context.Context) {
 			s.logger.Info("Stopping blockchain event listener")
 			return
 		case <-ticker.C:
-			// Simulate processing events
-			s.logger.Debug("Checking for blockchain events")
+			// Poll for new events
+			if err := s.pollForEvents(ctx, fromBlock); err != nil {
+				s.logger.Error("Failed to poll for events", "error", err)
+			} else {
+				// Update fromBlock to current block
+				if currentBlock, err := s.blockchain.GetLatestBlockNumber(ctx); err == nil {
+					fromBlock = uint64(currentBlock)
+				}
+			}
+		case <-offlineTicker.C:
+			if err := s.MarkOfflineProviders(); err != nil {
+				s.logger.Error("Failed to mark offline providers", "error", err)
+			}
 		}
 	}
+}
+
+// pollForEvents polls for blockchain events
+func (s *Service) pollForEvents(ctx context.Context, fromBlock uint64) error {
+	// Get current block
+	currentBlock, err := s.blockchain.GetLatestBlockNumber(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get current block: %w", err)
+	}
+
+	// Only process if there are new blocks
+	if uint64(currentBlock) <= fromBlock {
+		return nil
+	}
+
+	// Query for NodeRegistered events
+	nodeRegisteredEvents, err := s.nodeReputationContract.FilterNodeRegistered(&bind.FilterOpts{
+		Start:   fromBlock,
+		End:     &currentBlock,
+		Context: ctx,
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("failed to filter NodeRegistered events: %w", err)
+	}
+
+	// Process NodeRegistered events
+	for nodeRegisteredEvents.Next() {
+		event := nodeRegisteredEvents.Event
+		s.logger.Info("Received NodeRegistered event", "provider", event.Provider.Hex())
+		if err := s.processNodeRegisteredEvent(event); err != nil {
+			s.logger.Error("Failed to process NodeRegistered event", "error", err, "provider", event.Provider.Hex())
+		}
+	}
+
+	// Query for NodeHeartbeat events
+	nodeHeartbeatEvents, err := s.nodeReputationContract.FilterNodeHeartbeat(&bind.FilterOpts{
+		Start:   fromBlock,
+		End:     &currentBlock,
+		Context: ctx,
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("failed to filter NodeHeartbeat events: %w", err)
+	}
+
+	// Process NodeHeartbeat events
+	for nodeHeartbeatEvents.Next() {
+		event := nodeHeartbeatEvents.Event
+		s.logger.Debug("Received NodeHeartbeat event", "provider", event.Provider.Hex())
+		if err := s.processNodeHeartbeatEvent(event); err != nil {
+			s.logger.Error("Failed to process NodeHeartbeat event", "error", err, "provider", event.Provider.Hex())
+		}
+	}
+
+	return nil
+}
+
+// processNodeRegisteredEvent processes a NodeRegistered event from the blockchain
+func (s *Service) processNodeRegisteredEvent(event *contracts.NodeReputationNodeRegistered) error {
+	s.logger.Info("Processing NodeRegistered event", "provider", event.Provider.Hex())
+
+	// Convert the event to our internal format
+	nodeEvent := NodeRegisteredEvent{
+		ProviderAddress: event.Provider.Hex(),
+		GPUModel:        event.GpuModel,
+		VRAM:            int(event.Vram.Int64()),
+		BlockNumber:     event.Raw.BlockNumber,
+		TransactionHash: event.Raw.TxHash.Hex(),
+	}
+
+	// Process the event using existing logic
+	return s.ProcessNodeRegisteredEvent(nodeEvent)
+}
+
+// processNodeHeartbeatEvent processes a NodeHeartbeat event from the blockchain
+func (s *Service) processNodeHeartbeatEvent(event *contracts.NodeReputationNodeHeartbeat) error {
+	s.logger.Debug("Processing NodeHeartbeat event", "provider", event.Provider.Hex())
+
+	// Convert the event to our internal format
+	heartbeatEvent := NodeHeartbeatEvent{
+		ProviderAddress: event.Provider.Hex(),
+		BlockNumber:     event.Raw.BlockNumber,
+		TransactionHash: event.Raw.TxHash.Hex(),
+	}
+
+	// Process the event using existing logic
+	return s.ProcessNodeHeartbeatEvent(heartbeatEvent)
 }
 
 // ProcessNodeRegisteredEvent processes a NodeRegistered event

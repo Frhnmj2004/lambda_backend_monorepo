@@ -7,19 +7,23 @@ import (
 	"time"
 
 	"lamda_backend/pkg/blockchain"
+	"lamda_backend/pkg/contracts"
 	"lamda_backend/pkg/logger"
 	"lamda_backend/pkg/nats"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"gorm.io/gorm"
 )
 
 // Service handles job dispatching operations
 type Service struct {
-	db           *gorm.DB
-	natsClient   *nats.NATSClient
-	blockchain   *blockchain.EVMClient
-	logger       *logger.Logger
-	contractAddr string
+	db                 *gorm.DB
+	natsClient         *nats.NATSClient
+	blockchain         *blockchain.EVMClient
+	logger             *logger.Logger
+	contractAddr       string
+	jobManagerContract *contracts.JobManager
 }
 
 // NewService creates a new job dispatcher service
@@ -36,6 +40,14 @@ func NewService(db *gorm.DB, natsClient *nats.NATSClient, blockchain *blockchain
 // Start starts the job dispatcher service
 func (s *Service) Start(ctx context.Context) error {
 	s.logger.Info("Starting job dispatcher service")
+
+	// Initialize the JobManager contract
+	contractAddress := common.HexToAddress(s.contractAddr)
+	jobManagerContract, err := contracts.NewJobManager(contractAddress, s.blockchain.GetClient())
+	if err != nil {
+		return fmt.Errorf("failed to initialize JobManager contract: %w", err)
+	}
+	s.jobManagerContract = jobManagerContract
 
 	// Subscribe to NATS queries
 	if err := s.subscribeToQueries(); err != nil {
@@ -88,16 +100,21 @@ func (s *Service) handleJobQuery(data []byte) ([]byte, error) {
 
 // listenToBlockchainEvents listens for blockchain events
 func (s *Service) listenToBlockchainEvents(ctx context.Context) {
-	s.logger.Info("Starting blockchain event listener")
+	s.logger.Info("Starting blockchain event listener (polling mode)")
 
-	// TODO: Implement actual blockchain event listening
-	// This would involve:
-	// 1. Setting up event filters for JobCreated events
-	// 2. Polling for new events
-	// 3. Processing events and dispatching jobs
+	// Get the latest block number to start listening from
+	latestBlock, err := s.blockchain.GetLatestBlockNumber(ctx)
+	if err != nil {
+		s.logger.Error("Failed to get latest block number", "error", err)
+		return
+	}
 
-	// For now, we'll simulate the event processing
-	ticker := time.NewTicker(30 * time.Second)
+	// Start from the latest block
+	fromBlock := uint64(latestBlock)
+	s.logger.Info("Starting event listener from block", "block", fromBlock)
+
+	// Poll for events every 10 seconds
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -106,10 +123,70 @@ func (s *Service) listenToBlockchainEvents(ctx context.Context) {
 			s.logger.Info("Stopping blockchain event listener")
 			return
 		case <-ticker.C:
-			// Simulate processing events
-			s.logger.Debug("Checking for blockchain events")
+			// Poll for new events
+			if err := s.pollForEvents(ctx, fromBlock); err != nil {
+				s.logger.Error("Failed to poll for events", "error", err)
+			} else {
+				// Update fromBlock to current block
+				if currentBlock, err := s.blockchain.GetLatestBlockNumber(ctx); err == nil {
+					fromBlock = uint64(currentBlock)
+				}
+			}
 		}
 	}
+}
+
+// pollForEvents polls for blockchain events
+func (s *Service) pollForEvents(ctx context.Context, fromBlock uint64) error {
+	// Get current block
+	currentBlock, err := s.blockchain.GetLatestBlockNumber(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get current block: %w", err)
+	}
+
+	// Only process if there are new blocks
+	if uint64(currentBlock) <= fromBlock {
+		return nil
+	}
+
+	// Query for JobCreated events
+	jobCreatedEvents, err := s.jobManagerContract.FilterJobCreated(&bind.FilterOpts{
+		Start:   fromBlock,
+		End:     &currentBlock,
+		Context: ctx,
+	}, nil, nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to filter JobCreated events: %w", err)
+	}
+
+	// Process JobCreated events
+	for jobCreatedEvents.Next() {
+		event := jobCreatedEvents.Event
+		s.logger.Info("Received JobCreated event", "job_id", fmt.Sprintf("0x%x", event.JobId))
+		if err := s.processJobCreatedEvent(event); err != nil {
+			s.logger.Error("Failed to process JobCreated event", "error", err, "job_id", fmt.Sprintf("0x%x", event.JobId))
+		}
+	}
+
+	return nil
+}
+
+// processJobCreatedEvent processes a JobCreated event from the blockchain
+func (s *Service) processJobCreatedEvent(event *contracts.JobManagerJobCreated) error {
+	s.logger.Info("Processing JobCreated event", "job_id", fmt.Sprintf("0x%x", event.JobId))
+
+	// Convert the event to our internal format
+	jobEvent := JobCreatedEvent{
+		JobID:           fmt.Sprintf("0x%x", event.JobId),
+		RenterAddress:   event.Renter.Hex(),
+		ProviderAddress: event.Provider.Hex(),
+		PaymentAmount:   event.Payment.String(),
+		BlockNumber:     event.Raw.BlockNumber,
+		TransactionHash: event.Raw.TxHash.Hex(),
+	}
+
+	// Process the event using existing logic
+	return s.ProcessJobCreatedEvent(jobEvent)
 }
 
 // ProcessJobCreatedEvent processes a JobCreated event
@@ -118,17 +195,15 @@ func (s *Service) ProcessJobCreatedEvent(event JobCreatedEvent) error {
 
 	// Create job record
 	job := &Job{
-		ID:                     event.JobID,
-		RenterAddress:          event.RenterAddress,
-		ProviderAddress:        event.ProviderAddress,
-		DockerImage:            event.DockerImage,
-		GreenfieldInputURL:     event.GreenfieldInputURL,
-		GreenfieldOutputBucket: event.GreenfieldOutputBucket,
-		GreenfieldOutputName:   event.GreenfieldOutputName,
-		PaymentAmount:          event.PaymentAmount,
-		Status:                 JobStatusCreated,
-		CreatedAt:              time.Now(),
-		UpdatedAt:              time.Now(),
+		ID:              event.JobID,
+		RenterAddress:   event.RenterAddress,
+		ProviderAddress: event.ProviderAddress,
+		DockerImage:     event.DockerImage,
+		InputFileCID:    event.InputFileCID,
+		PaymentAmount:   event.PaymentAmount,
+		Status:          JobStatusCreated,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	// Save job to database
@@ -149,11 +224,9 @@ func (s *Service) ProcessJobCreatedEvent(event JobCreatedEvent) error {
 func (s *Service) dispatchJobToProvider(event JobCreatedEvent) error {
 	// Create job assignment
 	assignment := JobAssignment{
-		JobID:                  event.JobID,
-		DockerImage:            event.DockerImage,
-		GreenfieldInputURL:     event.GreenfieldInputURL,
-		GreenfieldOutputBucket: event.GreenfieldOutputBucket,
-		GreenfieldOutputName:   event.GreenfieldOutputName,
+		JobID:        event.JobID,
+		DockerImage:  event.DockerImage,
+		InputFileCID: event.InputFileCID,
 	}
 
 	// Publish to provider-specific subject
