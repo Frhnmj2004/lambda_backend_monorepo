@@ -38,11 +38,16 @@ type Config struct {
 
 // LoadConfig loads configuration from environment variables
 func LoadConfig() (*Config, error) {
-	// Load .env file if it exists
-	if err := godotenv.Load(); err != nil {
-		// Don't fail if .env doesn't exist
-		fmt.Println("No .env file found, using environment variables")
+	// Load .env file if it exists (only in development)
+	if os.Getenv("ENVIRONMENT") != "production" {
+		if err := godotenv.Load(); err != nil {
+			// Don't fail if .env doesn't exist
+			fmt.Println("No .env file found, using environment variables")
+		}
 	}
+
+	// Get port from Railway PORT or default to API_PORT
+	port := getEnv("PORT", getEnv("API_PORT", "8080"))
 
 	config := &Config{
 		DatabaseURL:                   getEnv("DATABASE_URL", "postgres://lamda:lamda123@localhost:5432/lamda_db"),
@@ -52,7 +57,7 @@ func LoadConfig() (*Config, error) {
 		JobManagerContractAddress:     getEnv("JOB_MANAGER_CONTRACT_ADDRESS", ""),
 		NodeReputationContractAddress: getEnv("NODE_REPUTATION_CONTRACT_ADDRESS", ""),
 		AdminWalletPrivateKey:         getEnv("ADMIN_WALLET_PRIVATE_KEY", ""),
-		APIPort:                       getEnv("API_PORT", "8080"),
+		APIPort:                       port,
 		Environment:                   getEnv("ENVIRONMENT", "development"),
 	}
 
